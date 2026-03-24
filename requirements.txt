@@ -1,0 +1,7 @@
+fastmcp
+qdrant-client
+fastembed
+langgraph
+langchain-core
+uvicorn
+httpx
