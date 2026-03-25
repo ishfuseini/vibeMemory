@@ -1,3 +1,5 @@
 nicegui
 qdrant-client
 fastembed
+langchain-core
+langgraph

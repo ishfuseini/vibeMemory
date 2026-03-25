@@ -1,5 +1,5 @@
-# vibeMemory — Podman Compose full stack
-# Usage: podman compose up -d
+# vibeMemory — Docker Compose full stack
+# Usage: docker compose up -d
 #
 # Required env vars (set in .env or export before running):
 #   VIBEMEMORY_API_KEY  — Bearer token for MCP server
@@ -9,7 +9,7 @@
 services:
 
   qdrant:
-    image: docker.io/qdrant/qdrant:latest
+    image: qdrant/qdrant:latest
     volumes:
       - qdrant_data:/qdrant/storage
     healthcheck:
@@ -22,6 +22,8 @@ services:
     build:
       context: .
       dockerfile: Containerfile
+    ports:
+      - "8000:8000"
     environment:
       QDRANT_URL: http://qdrant:6333
       SIMILARITY_THRESHOLD: "0.92"
@@ -35,6 +37,8 @@ services:
     build:
       context: .
       dockerfile: dashboard/Containerfile
+    ports:
+      - "8080:8080"
     environment:
       QDRANT_URL: http://qdrant:6333
       DASHBOARD_PASSWORD: ${DASHBOARD_PASSWORD}
@@ -44,7 +48,9 @@ services:
         condition: service_healthy
 
   caddy:
-    image: docker.io/caddy:latest
+    image: caddy:latest
+    profiles:
+      - proxy
     ports:
       - "80:80"
       - "443:443"
