@@ -8,3 +8,15 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Node
+node_modules/
+
+# Secrets
+.env
+
+# Local tooling
+.claude/settings.json
+
+# Build artifacts
+dashboard/static/app.css

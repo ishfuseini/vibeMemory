@@ -1,0 +1,63 @@
+# vibeMemory — Podman Compose full stack
+# Usage: podman compose up -d
+#
+# Required env vars (set in .env or export before running):
+#   VIBEMEMORY_API_KEY  — Bearer token for MCP server
+#   DASHBOARD_PASSWORD  — Password for the dashboard login page
+#   STORAGE_SECRET      — Secret used to sign NiceGUI session cookies
+
+services:
+
+  qdrant:
+    image: docker.io/qdrant/qdrant:latest
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'cat < /dev/null > /dev/tcp/localhost/6333'"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  memory-server:
+    build:
+      context: .
+      dockerfile: Containerfile
+    environment:
+      QDRANT_URL: http://qdrant:6333
+      SIMILARITY_THRESHOLD: "0.92"
+      MAX_TEXT_LEN: "2000"
+      VIBEMEMORY_API_KEY: ${VIBEMEMORY_API_KEY}
+    depends_on:
+      qdrant:
+        condition: service_healthy
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: dashboard/Containerfile
+    environment:
+      QDRANT_URL: http://qdrant:6333
+      DASHBOARD_PASSWORD: ${DASHBOARD_PASSWORD}
+      STORAGE_SECRET: ${STORAGE_SECRET}
+    depends_on:
+      qdrant:
+        condition: service_healthy
+
+  caddy:
+    image: docker.io/caddy:latest
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - memory-server
+      - dashboard
+
+volumes:
+  qdrant_data:
+  caddy_data:
+  caddy_config:
