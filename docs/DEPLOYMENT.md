@@ -1,31 +1,19 @@
 # Deployment Guide
 
-Production deployment of vibeMemory to a VPS, served over HTTPS at a custom domain via Caddy.
+Production deployment of vibeMemory to a VPS. Ports 8000 (MCP) and 8080 (dashboard) are exposed directly — put a reverse proxy or Cloudflare Tunnel in front when ready.
 
 ## Prerequisites
 
 - A VPS running Linux (Ubuntu 22.04+ recommended)
-- Docker or Podman with Compose installed
-- A domain with an A record pointing to the VPS IP
-- Ports 80 and 443 open in the VPS firewall
-
-### DNS
-
-Add an A record for your subdomain:
-
-```
-mem.ishf.dev  →  <your VPS IP>
-```
-
-Caddy handles TLS certificate issuance automatically once DNS resolves.
+- Docker with Compose plugin installed (`apt install docker.io docker-compose-v2`)
 
 ---
 
 ## 1. Clone the repository
 
 ```bash
-git clone <repo-url> vibememory
-cd vibememory
+git clone <repo-url> /opt/vibeMemory
+cd /opt/vibeMemory
 ```
 
 ---
@@ -59,21 +47,16 @@ STORAGE_SECRET=<generated>
 ## 3. Start the stack
 
 ```bash
-podman compose up -d
-# or
 docker compose up -d
 ```
 
-Services that start:
+Services:
 
-| Service | Internal address | Public |
-|---------|-----------------|--------|
-| qdrant | qdrant:6333 | No — internal only |
-| memory-server | memory-server:8000 | Via Caddy at `/mcp` |
-| dashboard | dashboard:8080 | Via Caddy at `/` |
-| caddy | — | Ports 80, 443 |
-
-Caddy requests a Let's Encrypt TLS certificate on first start. This requires port 80 to be reachable for the ACME HTTP-01 challenge.
+| Service | Port | Public |
+|---------|------|--------|
+| qdrant | 6333 | No — internal only |
+| memory-server | 8000 | Yes |
+| dashboard | 8080 | Yes |
 
 ---
 
@@ -81,15 +64,15 @@ Caddy requests a Let's Encrypt TLS certificate on first start. This requires por
 
 ```bash
 # Health check (no auth required)
-curl -s https://mem.ishf.dev/health | python3 -m json.tool
+curl -s http://YOUR_VPS_IP:8000/health | python3 -m json.tool
 # Expected: {"status": "ok", ...}
 
 # Dashboard
-open https://mem.ishf.dev
+open http://YOUR_VPS_IP:8080
 # Expected: password prompt, then the memory browser
 
 # MCP server (requires API key)
-curl -s https://mem.ishf.dev/mcp \
+curl -s http://YOUR_VPS_IP:8000/mcp \
   -H "Authorization: Bearer $VIBEMEMORY_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
@@ -110,7 +93,7 @@ Add to `~/.claude/mcp.json` (or your project-level `mcp.json`):
   "mcpServers": {
     "vibeMemory": {
       "type": "http",
-      "url": "https://mem.ishf.dev/mcp",
+      "url": "http://YOUR_VPS_IP:8000/mcp",
       "headers": {
         "Authorization": "Bearer <your VIBEMEMORY_API_KEY>"
       }
@@ -124,7 +107,7 @@ Add to `~/.claude/mcp.json` (or your project-level `mcp.json`):
 In Settings → MCP → Add Server:
 
 ```
-URL:  https://mem.ishf.dev/mcp
+URL:  http://YOUR_VPS_IP:8000/mcp
 Header name:  Authorization
 Header value: Bearer <your VIBEMEMORY_API_KEY>
 ```
@@ -134,9 +117,8 @@ Header value: Bearer <your VIBEMEMORY_API_KEY>
 ## 6. View logs
 
 ```bash
-podman compose logs -f memory-server
-podman compose logs -f dashboard
-podman compose logs -f caddy
+docker compose logs -f memory-server
+docker compose logs -f dashboard
 ```
 
 ---
@@ -145,8 +127,8 @@ podman compose logs -f caddy
 
 ```bash
 git pull
-podman compose build
-podman compose up -d
+docker compose build
+docker compose up -d
 ```
 
 Only the services whose images changed will restart.
@@ -160,7 +142,7 @@ Only the services whose images changed will restart.
 3. Restart affected services:
 
 ```bash
-podman compose up -d memory-server dashboard
+docker compose up -d memory-server dashboard
 ```
 
 > Rotating `STORAGE_SECRET` invalidates all active dashboard sessions — users will need to log in again.
@@ -172,7 +154,7 @@ podman compose up -d memory-server dashboard
 Qdrant data lives in the `qdrant_data` Docker volume. To back it up:
 
 ```bash
-podman run --rm \
+docker run --rm \
   -v qdrant_data:/data \
   -v $(pwd)/backups:/backup \
   alpine tar czf /backup/qdrant-$(date +%Y%m%d).tar.gz -C /data .
@@ -181,27 +163,17 @@ podman run --rm \
 To restore:
 
 ```bash
-podman compose down
-podman run --rm \
+docker compose down
+docker run --rm \
   -v qdrant_data:/data \
   -v $(pwd)/backups:/backup \
   alpine tar xzf /backup/qdrant-<date>.tar.gz -C /data
-podman compose up -d
+docker compose up -d
 ```
 
 ---
 
 ## 10. Troubleshooting
-
-### Caddy fails to get TLS certificate
-
-```
-error obtaining certificate: ...
-```
-
-- Confirm DNS A record is pointing to the VPS IP (`dig mem.ishf.dev`)
-- Confirm port 80 is open in the VPS firewall
-- Check Caddy logs: `podman compose logs caddy`
 
 ### Dashboard shows 500 on startup
 
@@ -212,7 +184,7 @@ RuntimeError: STORAGE_SECRET environment variable must be set
 The `STORAGE_SECRET` variable is missing from `.env`. Set it and restart:
 
 ```bash
-podman compose up -d dashboard
+docker compose up -d dashboard
 ```
 
 ### MCP server returns 401
@@ -220,7 +192,7 @@ podman compose up -d dashboard
 The `Authorization` header is missing or the key does not match `VIBEMEMORY_API_KEY`. Verify with:
 
 ```bash
-curl -v https://mem.ishf.dev/mcp \
+curl -v http://YOUR_VPS_IP:8000/mcp \
   -H "Authorization: Bearer $VIBEMEMORY_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
@@ -232,15 +204,15 @@ curl -v https://mem.ishf.dev/mcp \
 RuntimeError: Cannot connect to Qdrant at http://qdrant:6333
 ```
 
-Qdrant may still be starting up. Check its health:
+Check Qdrant health:
 
 ```bash
-podman compose ps qdrant
-podman compose logs qdrant
+docker compose ps qdrant
+docker compose logs qdrant
 ```
 
-Both `memory-server` and `dashboard` wait for Qdrant's healthcheck before starting, but if the container was manually restarted they may need a nudge:
+Both `memory-server` and `dashboard` wait for Qdrant's healthcheck before starting. If manually restarted:
 
 ```bash
-podman compose restart memory-server dashboard
+docker compose restart memory-server dashboard
 ```
